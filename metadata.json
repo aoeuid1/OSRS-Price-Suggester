@@ -1,0 +1,5 @@
+{
+  "name": "OSRS prices",
+  "description": "An application to track and visualize the price history of items from Old School RuneScape using the RuneScape Wiki API.",
+  "requestFramePermissions": []
+}
