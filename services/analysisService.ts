@@ -110,4 +110,64 @@ export const calculateOfferPrices = (
 
     for (const p of priceHistory) {
         if (p.avgHighPrice !== null && p.avgHighPrice !== undefined) lastHigh = p.avgHighPrice;
-        if (p.avgLowPrice !== null && p.avgLowPrice !== undefined) lastLow
+        if (p.avgLowPrice !== null && p.avgLowPrice !== undefined) lastLow = p.avgLowPrice;
+
+        if (lastHigh !== null && lastLow !== null) {
+            cleanHighs.push(lastHigh);
+            cleanLows.push(lastLow);
+        }
+    }
+
+    // Need enough data
+    if (cleanHighs.length < MARGIN_WINDOW + 2) {
+        return null;
+    }
+
+    // 2. Calculate Mids
+    const mids = cleanHighs.map((h, i) => (h + cleanLows[i]) / 2);
+
+    // 3. Calculate Fair Value (EMA)
+    const fairPrices = calculateEMA(mids, SMOOTHING_WINDOW);
+
+    // 4. Calculate Spreads (Fair - Low)
+    // Note: fairPrices array aligns perfectly with cleanLows
+    const spreadLowers = fairPrices.map((fair, i) => fair - cleanLows[i]);
+
+    // 5. Calculate Deep Margin (Rolling Max)
+    const marginDeeps = calculateRollingMax(spreadLowers, MARGIN_WINDOW);
+
+    // 6. Select Target Index (Second to last)
+    // Python: iloc[-2]
+    const targetIndex = cleanHighs.length - 2;
+
+    const prevFair = fairPrices[targetIndex];
+    const prevMarginDeep = marginDeeps[targetIndex];
+
+    // 7. Strategy Calculation
+    const targetBuy = Math.floor(prevFair - (prevMarginDeep * LOWBALL_FACTOR));
+    const targetSell = Math.floor(targetBuy * PROFIT_TARGET);
+
+    // 8. Profitability Check
+    const tax = calculateTax(targetSell);
+    const expectedProfit = targetSell - targetBuy - tax;
+
+    if (expectedProfit <= 0) {
+        return {
+            recommendedBuy: null,
+            recommendedSell: null,
+            potentialProfit: 0,
+            potentialMargin: '0.00%',
+            analysisMethod: 'Historical',
+            fulfilmentAnalysis: null
+        };
+    }
+
+    return {
+        recommendedBuy: targetBuy,
+        recommendedSell: targetSell,
+        potentialProfit: expectedProfit,
+        potentialMargin: ((expectedProfit / targetBuy) * 100).toFixed(2) + '%',
+        analysisMethod: 'Historical',
+        fulfilmentAnalysis: null
+    };
+};
