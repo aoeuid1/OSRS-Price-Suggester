@@ -89,22 +89,6 @@ const calculateGETax = (price: number): number => {
 export const calculateOfferPrices = (
     priceHistory: PriceDataPoint[]
 ): OfferPriceAnalysis | null => {
-    return {
-        recommendedBuy: 1,
-        recommendedSell: 2,
-        potentialProfit: 3,
-        potentialMargin: '4',
-        analysisMethod: 'Historical',
-        // Fulfilment analysis is outside the scope of the raw V13 pricing logic, 
-        // but required by the interface.
-        fulfilmentAnalysis: null 
-    };
-
-}
-
-export const calculateOfferPrices_1 = (
-    priceHistory: PriceDataPoint[]
-): OfferPriceAnalysis | null => {
     if (!priceHistory || priceHistory.length < MARGIN_WINDOW) {
         return null;
     }
