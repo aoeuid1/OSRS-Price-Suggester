@@ -4,7 +4,7 @@ import { PriceDataPoint, OfferPriceAnalysis } from './types';
 const TAX_RATE = 0.01;
 const TAX_CAP = 5_000_000;
 
-// STRATEGY PARAMETERS (Must match Python V13)
+// STRATEGY PARAMETERS
 const SMOOTHING_WINDOW = 12; // 1 Hour EMA
 const MARGIN_WINDOW = 48;    // 4 Hours Lookback
 const LOWBALL_FACTOR = 1.1;  // Buy Depth
@@ -17,46 +17,39 @@ const calculateTax = (price: number): number => {
 };
 
 /**
- * Calculates Exponential Moving Average (EMA).
- * Matches Pandas ewm(span=window).
+ * Calculates EMA matching Pandas ewm(span=window, adjust=True).
+ * Uses weighted sum formula:
+ * Y_t = (x_t + (1-a)*x_{t-1} + ...) / (1 + (1-a) + ...)
  */
-const calculateEMA = (values: (number | null)[], span: number): (number | null)[] => {
+const calculateEMA = (values: number[], span: number): number[] => {
     const alpha = 2 / (span + 1);
-    let ema: number | null = null;
-    const result: (number | null)[] = [];
+    const decay = 1 - alpha;
+    
+    let numerator = 0;
+    let denominator = 0;
+    const result: number[] = [];
 
     for (const val of values) {
-        if (val === null) {
-            result.push(null);
-            continue;
-        }
-
-        if (ema === null) {
-            ema = val; 
-        } else {
-            ema = (val * alpha) + (ema * (1 - alpha));
-        }
-        result.push(ema);
+        numerator = val + (decay * numerator);
+        denominator = 1 + (decay * denominator);
+        result.push(numerator / denominator);
     }
     return result;
 };
 
 /**
- * Calculates Rolling Maximum matching Pandas rolling(window).max().
+ * Calculates Rolling Maximum.
  */
-const calculateRollingMax = (values: (number | null)[], windowSize: number): (number | null)[] => {
-    const result: (number | null)[] = [];
+const calculateRollingMax = (values: number[], windowSize: number): number[] => {
+    const result: number[] = [];
     
     for (let i = 0; i < values.length; i++) {
-        let maxVal: number | null = null;
+        let maxVal = -Infinity;
         const start = Math.max(0, i - windowSize + 1);
         
         for (let j = start; j <= i; j++) {
-            const v = values[j];
-            if (v !== null) {
-                if (maxVal === null || v > maxVal) {
-                    maxVal = v;
-                }
+            if (values[j] > maxVal) {
+                maxVal = values[j];
             }
         }
         result.push(maxVal);
@@ -65,114 +58,56 @@ const calculateRollingMax = (values: (number | null)[], windowSize: number): (nu
 };
 
 /**
- * Forward Fill Logic.
- * Matches Pandas ffill() behavior: propagates last valid observation forward.
+ * 1. Forward Fills null values.
+ * 2. Filters out rows that remain invalid (leading nulls).
+ * This matches `df.ffill().dropna()` in Python.
  */
-const cleanData = (history: PriceDataPoint[]): PriceDataPoint[] => {
+const prepareSeries = (history: PriceDataPoint[]): { mids: number[], spreadLowers: number[] } | null => {
     let lastHigh: number | null = null;
     let lastLow: number | null = null;
 
-    return history.map(p => {
-        // Note: We use !== null to ensure we don't skip 0 values
+    const validMids: number[] = [];
+    const validSpreads: number[] = [];
+
+    // Pass 1: Forward Fill & Filter
+    // We don't return the objects, just the derived numbers needed for calc
+    for (const p of history) {
+        // Update State
         if (p.avgHighPrice !== null && p.avgHighPrice !== undefined) lastHigh = p.avgHighPrice;
         if (p.avgLowPrice !== null && p.avgLowPrice !== undefined) lastLow = p.avgLowPrice;
-        
-        return {
-            ...p,
-            avgHighPrice: (p.avgHighPrice !== null && p.avgHighPrice !== undefined) ? p.avgHighPrice : lastHigh,
-            avgLowPrice: (p.avgLowPrice !== null && p.avgLowPrice !== undefined) ? p.avgLowPrice : lastLow,
-        };
-    });
+
+        // If we have valid data (either current or carried forward), process it
+        if (lastHigh !== null && lastLow !== null) {
+            const mid = (lastHigh + lastLow) / 2;
+            validMids.push(mid);
+            // We calculate spread later? No, spread requires Fair Price first.
+            // We just return the raw data streams aligned.
+        }
+    }
+
+    if (validMids.length === 0) return null;
+
+    return {
+        mids: validMids,
+        // Recalculating spread requires Fair Value, which is calculated from Mids.
+        // So we actually need the raw Highs/Lows aligned with Mids.
+        spreadLowers: [] // Placeholder, we'll do this in main body for clarity
+    };
 };
 
-// --- MAIN EXPORT ---
+// --- MAIN FUNCTION ---
 
 export const calculateOfferPrices = (
     priceHistory: PriceDataPoint[]
 ): OfferPriceAnalysis | null => {
-    // Ensure we have enough data for the rolling window + the offset
-    if (!priceHistory || priceHistory.length < MARGIN_WINDOW + 2) {
-        return null;
-    }
+    // 1. Pre-process (FFill + DropNA)
+    // We need the aligned lists of Highs and Lows to calculate everything
+    const cleanHighs: number[] = [];
+    const cleanLows: number[] = [];
 
-    // 1. Clean Data (Forward Fill)
-    const cleanedHistory = cleanData([...priceHistory]);
+    let lastHigh: number | null = null;
+    let lastLow: number | null = null;
 
-    // 2. Extract Series
-    const highs = cleanedHistory.map(p => p.avgHighPrice);
-    const lows = cleanedHistory.map(p => p.avgLowPrice);
-
-    // 3. Calculate Indicators
-    const mids: (number | null)[] = [];
-    const spreadLowers: (number | null)[] = [];
-
-    // Calculate Mids first
-    for (let i = 0; i < cleanedHistory.length; i++) {
-        const h = highs[i];
-        const l = lows[i];
-        if (h !== null && l !== null) {
-            mids.push((h + l) / 2);
-        } else {
-            mids.push(null);
-        }
-    }
-
-    // Calculate Fair Price (EMA)
-    const fairPrices = calculateEMA(mids, SMOOTHING_WINDOW);
-
-    // Calculate Spread Lower (Fair - Low)
-    for (let i = 0; i < cleanedHistory.length; i++) {
-        const f = fairPrices[i];
-        const l = lows[i];
-        if (f !== null && l !== null) {
-            spreadLowers.push(f - l);
-        } else {
-            spreadLowers.push(null);
-        }
-    }
-
-    // Calculate Deep Margin (Rolling Max)
-    const marginDeeps = calculateRollingMax(spreadLowers, MARGIN_WINDOW);
-
-    // 4. Select Data Point
-    // Python uses iloc[-2] (Second to last candle) for stability.
-    const prevIndex = cleanedHistory.length - 2;
-    
-    const prevFair = fairPrices[prevIndex];
-    const prevMarginDeep = marginDeeps[prevIndex];
-
-    if (prevFair === null || prevMarginDeep === null) {
-        return null;
-    }
-
-    // 5. Strategy Calculation
-    // Buy Logic: Fair Value - (Max Historical Dip * 1.1)
-    const targetBuy = Math.floor(prevFair - (prevMarginDeep * LOWBALL_FACTOR));
-
-    // Sell Logic: Target Profit (1.5%)
-    const targetSell = Math.floor(targetBuy * PROFIT_TARGET);
-
-    // 6. Profitability Check
-    const tax = calculateTax(targetSell);
-    const expectedProfit = targetSell - targetBuy - tax;
-
-    if (expectedProfit <= 0) {
-         return {
-            recommendedBuy: null,
-            recommendedSell: null,
-            potentialProfit: 0,
-            potentialMargin: '0.00%',
-            analysisMethod: 'Historical',
-            fulfilmentAnalysis: null
-        };
-    }
-
-    return {
-        recommendedBuy: targetBuy,
-        recommendedSell: targetSell,
-        potentialProfit: expectedProfit,
-        potentialMargin: ((expectedProfit / targetBuy) * 100).toFixed(2) + '%',
-        analysisMethod: 'Historical',
-        fulfilmentAnalysis: null
-    };
-};
+    for (const p of priceHistory) {
+        if (p.avgHighPrice !== null && p.avgHighPrice !== undefined) lastHigh = p.avgHighPrice;
+        if (p.avgLowPrice !== null && p.avgLowPrice !== undefined) lastLow
