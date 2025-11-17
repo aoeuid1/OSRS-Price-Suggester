@@ -1,4 +1,4 @@
-import { PriceDataPoint, OfferPriceAnalysis } from './types'; // Update path as needed
+import { PriceDataPoint, OfferPriceAnalysis } from '../types';
 
 // --- CONFIGURATION ---
 const TAX_RATE = 0.01;
@@ -127,7 +127,6 @@ export const calculateOfferPrices = (
             potentialProfit: 0,
             potentialMargin: '0.00%',
             analysisMethod: 'Historical',
-            fulfilmentAnalysis: null
         };
     }
 
@@ -137,6 +136,5 @@ export const calculateOfferPrices = (
         potentialProfit: expectedProfit,
         potentialMargin: ((expectedProfit / targetBuy) * 100).toFixed(2) + '%',
         analysisMethod: 'Historical',
-        fulfilmentAnalysis: null
     };
 };

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Item, PriceDataPoint, OfferPriceAnalysis } from '../types';
 import { calculateOfferPrices } from '../services/analysisService';
 import LoadingSpinner from './LoadingSpinner';
@@ -30,27 +30,12 @@ const formatVolume = (volume: number | null) => {
 const PriceTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
-        const isForecast = data.forecastPrice != null;
-
         return (
             <div className="bg-gray-700 p-3 rounded-lg border border-gray-600 shadow-lg text-sm">
-                <p className="label text-gray-200 font-bold mb-2">
-                    {isForecast && <span className="text-orange-400">[Forecast] </span>}
-                    {`${formatTimestamp(label)}`}
-                </p>
-                {isForecast ? (
-                     <>
-                        <p className="intro text-orange-300 font-semibold">{`Forecast Price: ${formatPrice(data.forecastPrice)}`}</p>
-                        <p className="intro text-gray-400">{`Forecast High: ${formatPrice(data.forecastHigh)}`}</p>
-                        <p className="intro text-gray-400">{`Forecast Low: ${formatPrice(data.forecastLow)}`}</p>
-                    </>
-                ) : (
-                    <>
-                        <p className="intro text-violet-300 font-semibold">{`Fair Price: ${formatPrice(data.fairPrice)}`}</p>
-                        <p className="intro text-cyan-400">{`Avg High: ${formatPrice(data.avgHighPrice)}`}</p>
-                        <p className="intro text-green-400">{`Avg Low: ${formatPrice(data.avgLowPrice)}`}</p>
-                    </>
-                )}
+                <p className="label text-gray-200 font-bold mb-2">{`${formatTimestamp(label)}`}</p>
+                <p className="intro text-violet-300 font-semibold">{`Fair Price: ${formatPrice(data.fairPrice)}`}</p>
+                <p className="intro text-cyan-400">{`Avg High: ${formatPrice(data.avgHighPrice)}`}</p>
+                <p className="intro text-green-400">{`Avg Low: ${formatPrice(data.avgLowPrice)}`}</p>
             </div>
         );
     }
@@ -155,57 +140,6 @@ const TradingTerminal: React.FC<{ analysis: OfferPriceAnalysis | null; }> = ({ a
                             <p className="text-xs text-gray-500">Margin: {analysis.potentialMargin ?? 'N/A'}</p>
                         </div>
                     </div>
-                     <div className="mt-6">
-                         <h4 className="text-md font-bold text-center text-gray-300 mb-3">Offer Analysis</h4>
-                         {analysis.fulfilmentAnalysis ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                 {/* Buy Offer Analysis */}
-                                 <div className="bg-gray-800 p-4 rounded-lg">
-                                     <p className="font-semibold text-green-400 mb-2 text-center">Buy Offer Fulfilment</p>
-                                     <table className="w-full text-sm">
-                                         <thead>
-                                             <tr className="border-b border-gray-700">
-                                                 <th className="text-left font-semibold text-gray-400 pb-1">Time Horizon</th>
-                                                 <th className="text-right font-semibold text-gray-400 pb-1">Est. Probability</th>
-                                             </tr>
-                                         </thead>
-                                         <tbody>
-                                            {analysis.fulfilmentAnalysis.buy.map(p => (
-                                                <tr key={p.timeHorizonHours}>
-                                                    <td className="text-gray-300 py-1">Within {p.timeHorizonHours} Hour{p.timeHorizonHours > 1 ? 's' : ''}</td>
-                                                    <td className="text-right text-gray-200 font-mono">{(p.probability * 100).toFixed(1)}%</td>
-                                                </tr>
-                                            ))}
-                                         </tbody>
-                                     </table>
-                                 </div>
-                                 {/* Sell Offer Analysis */}
-                                  <div className="bg-gray-800 p-4 rounded-lg">
-                                     <p className="font-semibold text-red-400 mb-2 text-center">Sell Offer Fulfilment</p>
-                                     <table className="w-full text-sm">
-                                         <thead>
-                                             <tr className="border-b border-gray-700">
-                                                 <th className="text-left font-semibold text-gray-400 pb-1">Time Horizon</th>
-                                                 <th className="text-right font-semibold text-gray-400 pb-1">Est. Probability</th>
-                                             </tr>
-                                         </thead>
-                                         <tbody>
-                                            {analysis.fulfilmentAnalysis.sell.map(p => (
-                                                <tr key={p.timeHorizonHours}>
-                                                    <td className="text-gray-300 py-1">Within {p.timeHorizonHours} Hour{p.timeHorizonHours > 1 ? 's' : ''}</td>
-                                                    <td className="text-right text-gray-200 font-mono">{(p.probability * 100).toFixed(1)}%</td>
-                                                </tr>
-                                            ))}
-                                         </tbody>
-                                     </table>
-                                 </div>
-                            </div>
-                         ) : (
-                            <div className="text-center text-gray-500 p-4 bg-gray-800 rounded-lg text-sm">
-                                Not enough forecast data to estimate fulfilment probabilities.
-                            </div>
-                         )}
-                     </div>
                 </>
             ) : (
                  <div className="text-center text-gray-400 p-4 bg-gray-800 rounded-lg">
@@ -254,9 +188,6 @@ const PriceChartModal: React.FC<PriceChartModalProps> = ({ item, priceHistory, i
 
         return priceHistory;
     }, [priceHistory, analysis]);
-
-    const forecastStartIndex = useMemo(() => chartData.findIndex(p => p.forecastPrice != null), [chartData]);
-    const forecastStartTimestamp = useMemo(() => forecastStartIndex !== -1 ? chartData[forecastStartIndex].timestamp : null, [chartData, forecastStartIndex]);
     
     return (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4" onClick={onClose}>
@@ -276,7 +207,7 @@ const PriceChartModal: React.FC<PriceChartModalProps> = ({ item, priceHistory, i
                         <>
                             <TradingTerminal analysis={analysis} />
                             <div className="w-full">
-                                <h4 className="text-lg font-semibold text-center text-gray-300 mb-2">Price History & Forecast</h4>
+                                <h4 className="text-lg font-semibold text-center text-gray-300 mb-2">Price History</h4>
                                 <ResponsiveContainer width="100%" height={300}>
                                     <LineChart data={chartData} syncId="priceVolumeSync" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
@@ -290,24 +221,11 @@ const PriceChartModal: React.FC<PriceChartModalProps> = ({ item, priceHistory, i
                                         />
                                         <Tooltip content={<PriceTooltip />} cursor={{ stroke: '#9CA3AF', strokeDasharray: '3 3' }} />
                                         <Legend wrapperStyle={{ paddingTop: '10px' }} />
-                                        
-                                        {forecastStartTimestamp && (
-                                            <ReferenceLine 
-                                                x={forecastStartTimestamp} 
-                                                stroke="white" 
-                                                strokeDasharray="3 3"
-                                                label={{ value: 'Forecast', position: 'insideTopLeft', fill: 'white', fontSize: 12 }}
-                                            />
-                                        )}
-                                                                                
+                                                                                                                        
                                         <Line type="monotone" dataKey="fairPrice" name="Fair Price (SMA)" stroke="#C4B5FD" dot={false} strokeWidth={2} strokeDasharray="5 5" connectNulls />
                                         <Line type="monotone" dataKey="avgHighPrice" name="Avg. High Price" stroke="#2DD4BF" dot={false} strokeWidth={2} connectNulls />
                                         <Line type="monotone" dataKey="avgLowPrice" name="Avg. Low Price" stroke="#4ADE80" dot={false} strokeWidth={2} connectNulls />
                                         
-                                        <Line type="monotone" dataKey="forecastPrice" name="Forecast Price" stroke="#FFA500" dot={false} strokeWidth={2} strokeDasharray="5 5" connectNulls />
-                                        <Line type="monotone" dataKey="forecastHigh" name="Forecast High" stroke="#FFA500" dot={false} strokeWidth={1.5} strokeOpacity={0.8} strokeDasharray="3 7" connectNulls />
-                                        <Line type="monotone" dataKey="forecastLow" name="Forecast Low" stroke="#FFA500" dot={false} strokeWidth={1.5} strokeOpacity={0.8} strokeDasharray="3 7" connectNulls />
-
                                         <Line type="monotone" dataKey="buyOffer" name="Suggested Buy" stroke="#4ADE80" strokeWidth={0} activeDot={{ r: 8 }} dot={{ r: 6, fill: '#4ADE80' }} connectNulls={false} />
                                         <Line type="monotone" dataKey="sellOffer" name="Suggested Sell" stroke="#F87171" strokeWidth={0} activeDot={{ r: 8 }} dot={{ r: 6, fill: '#F87171' }} connectNulls={false} />
                                     </LineChart>
@@ -333,10 +251,6 @@ const PriceChartModal: React.FC<PriceChartModalProps> = ({ item, priceHistory, i
                                         <Legend wrapperStyle={{ paddingTop: '10px' }} />
                                         <Line type="monotone" dataKey="maxRealisticMargin" name="Max Realistic Margin" stroke="#F472B6" dot={false} strokeWidth={2} strokeDasharray="5 5" connectNulls />
                                         <Line type="monotone" dataKey="maxRealisticMarginAfterTax" name="Margin (After Tax)" stroke="#C084FC" dot={false} strokeWidth={2} strokeDasharray="5 5" connectNulls />
-
-                                        {forecastStartTimestamp && (
-                                            <ReferenceLine x={forecastStartTimestamp} stroke="white" strokeDasharray="3 3" />
-                                        )}
                                     </LineChart>
                                 </ResponsiveContainer>
 
@@ -362,9 +276,6 @@ const PriceChartModal: React.FC<PriceChartModalProps> = ({ item, priceHistory, i
                                         <Legend wrapperStyle={{ paddingTop: '10px' }} />
                                         <Line type="monotone" dataKey="highPriceVolume" name="High Price Volume" stroke="#FBBF24" dot={false} strokeWidth={2} />
                                         <Line type="monotone" dataKey="lowPriceVolume" name="Low Price Volume" stroke="#F87171" dot={false} strokeWidth={2} />
-                                        {forecastStartTimestamp && (
-                                            <ReferenceLine x={forecastStartTimestamp} stroke="white" strokeDasharray="3 3" />
-                                        )}
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>

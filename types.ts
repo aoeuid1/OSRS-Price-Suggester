@@ -18,34 +18,22 @@ export interface PriceDataPoint {
     highPriceVolume: number;
     lowPriceVolume: number;
     fairPrice?: number | null;
-    // Fair Price Forecast
-    forecastPrice?: number | null;
-    forecastHigh?: number | null;
-    forecastLow?: number | null;
-    // High Price Forecast
-    forecastHigh_mean?: number | null;
-    forecastHigh_upper?: number | null;
-    forecastHigh_lower?: number | null;
-    // Low Price Forecast
-    forecastLow_mean?: number | null;
-    forecastLow_upper?: number | null;
-    forecastLow_lower?: number | null;
     maxRealisticMargin?: number | null;
     maxRealisticMarginAfterTax?: number | null;
     p90LowSpread?: number | null;
     p90HighSpread?: number | null;
     buyOffer?: number | null;
     sellOffer?: number | null;
-}
-
-export interface FulfilmentDataPoint {
-    timeHorizonHours: number;
-    probability: number;
-}
-
-export interface FulfilmentAnalysis {
-    buy: FulfilmentDataPoint[];
-    sell: FulfilmentDataPoint[];
+    // Fix: Add forecast properties
+    forecastPrice?: number | null;
+    forecastHigh?: number | null;
+    forecastLow?: number | null;
+    forecastHigh_mean?: number | null;
+    forecastHigh_upper?: number | null;
+    forecastHigh_lower?: number | null;
+    forecastLow_mean?: number | null;
+    forecastLow_upper?: number | null;
+    forecastLow_lower?: number | null;
 }
 
 export interface OfferPriceAnalysis {
@@ -53,6 +41,17 @@ export interface OfferPriceAnalysis {
     recommendedSell: number | null;
     potentialProfit: number | null;
     potentialMargin: string | null;
-    analysisMethod: 'Historical' | 'Hybrid Forecast';
-    fulfilmentAnalysis: FulfilmentAnalysis | null;
+    analysisMethod: 'Historical';
+}
+
+// Fix: Add FulfilmentDataPoint interface
+export interface FulfilmentDataPoint {
+    timeHorizonHours: number;
+    probability: number;
+}
+
+// Fix: Add FulfilmentAnalysis interface
+export interface FulfilmentAnalysis {
+    buy: FulfilmentDataPoint[];
+    sell: FulfilmentDataPoint[];
 }
