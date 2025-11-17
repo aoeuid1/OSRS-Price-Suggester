@@ -4,7 +4,7 @@ import { PriceDataPoint, OfferPriceAnalysis } from './types';
 const TAX_RATE = 0.01;
 const TAX_CAP = 5_000_000;
 
-// STRATEGY PARAMETERS
+// STRATEGY PARAMETERS (Must match Python V13)
 const SMOOTHING_WINDOW = 12; // 1 Hour EMA
 const MARGIN_WINDOW = 48;    // 4 Hours Lookback
 const LOWBALL_FACTOR = 1.1;  // Buy Depth
@@ -17,8 +17,8 @@ const calculateTax = (price: number): number => {
 };
 
 /**
- * Calculates Exponential Moving Average (EMA) matching Pandas ewm(span=window).
- * Uses simple recursion: EMA_t = alpha * x_t + (1 - alpha) * EMA_{t-1}
+ * Calculates Exponential Moving Average (EMA).
+ * Matches Pandas ewm(span=window).
  */
 const calculateEMA = (values: (number | null)[], span: number): (number | null)[] => {
     const alpha = 2 / (span + 1);
@@ -32,7 +32,7 @@ const calculateEMA = (values: (number | null)[], span: number): (number | null)[
         }
 
         if (ema === null) {
-            ema = val; // Initialize with first valid value
+            ema = val; 
         } else {
             ema = (val * alpha) + (ema * (1 - alpha));
         }
@@ -49,13 +49,11 @@ const calculateRollingMax = (values: (number | null)[], windowSize: number): (nu
     
     for (let i = 0; i < values.length; i++) {
         let maxVal: number | null = null;
-        // Window start index (inclusive)
         const start = Math.max(0, i - windowSize + 1);
         
         for (let j = start; j <= i; j++) {
             const v = values[j];
             if (v !== null) {
-                // Initialize maxVal if it's null, or update if v is larger
                 if (maxVal === null || v > maxVal) {
                     maxVal = v;
                 }
@@ -67,39 +65,37 @@ const calculateRollingMax = (values: (number | null)[], windowSize: number): (nu
 };
 
 /**
- * Implements Forward Fill logic (ffill).
- * If a value is null, it takes the previous known value.
+ * Forward Fill Logic.
+ * Matches Pandas ffill() behavior: propagates last valid observation forward.
  */
 const cleanData = (history: PriceDataPoint[]): PriceDataPoint[] => {
     let lastHigh: number | null = null;
     let lastLow: number | null = null;
 
     return history.map(p => {
-        // Update references if current values exist (check !== null to allow 0)
+        // Note: We use !== null to ensure we don't skip 0 values
         if (p.avgHighPrice !== null && p.avgHighPrice !== undefined) lastHigh = p.avgHighPrice;
         if (p.avgLowPrice !== null && p.avgLowPrice !== undefined) lastLow = p.avgLowPrice;
         
         return {
             ...p,
-            // Use current if valid, otherwise use last known (Forward Fill)
             avgHighPrice: (p.avgHighPrice !== null && p.avgHighPrice !== undefined) ? p.avgHighPrice : lastHigh,
             avgLowPrice: (p.avgLowPrice !== null && p.avgLowPrice !== undefined) ? p.avgLowPrice : lastLow,
         };
     });
 };
 
-// --- MAIN FUNCTION ---
+// --- MAIN EXPORT ---
 
 export const calculateOfferPrices = (
     priceHistory: PriceDataPoint[]
 ): OfferPriceAnalysis | null => {
-    // Need enough data to calculate the rolling window
-    if (!priceHistory || priceHistory.length < MARGIN_WINDOW) {
+    // Ensure we have enough data for the rolling window + the offset
+    if (!priceHistory || priceHistory.length < MARGIN_WINDOW + 2) {
         return null;
     }
 
     // 1. Clean Data (Forward Fill)
-    // We clone the array to avoid mutating the input
     const cleanedHistory = cleanData([...priceHistory]);
 
     // 2. Extract Series
@@ -108,13 +104,12 @@ export const calculateOfferPrices = (
 
     // 3. Calculate Indicators
     const mids: (number | null)[] = [];
-    
+    const spreadLowers: (number | null)[] = [];
+
+    // Calculate Mids first
     for (let i = 0; i < cleanedHistory.length; i++) {
         const h = highs[i];
         const l = lows[i];
-        
-        // We need both High and Low to calculate Mid. 
-        // If ffill failed (start of array), we have nulls.
         if (h !== null && l !== null) {
             mids.push((h + l) / 2);
         } else {
@@ -122,11 +117,10 @@ export const calculateOfferPrices = (
         }
     }
 
-    // Fair Price (EMA 12 of Mid)
+    // Calculate Fair Price (EMA)
     const fairPrices = calculateEMA(mids, SMOOTHING_WINDOW);
 
-    // Spread Lower (Fair - Low)
-    const spreadLowers: (number | null)[] = [];
+    // Calculate Spread Lower (Fair - Low)
     for (let i = 0; i < cleanedHistory.length; i++) {
         const f = fairPrices[i];
         const l = lows[i];
@@ -137,29 +131,25 @@ export const calculateOfferPrices = (
         }
     }
 
-    // Deep Margin (Rolling Max of Spread Lower)
+    // Calculate Deep Margin (Rolling Max)
     const marginDeeps = calculateRollingMax(spreadLowers, MARGIN_WINDOW);
 
-    // 4. Select "Latest" Data Point
-    // We use the very last index to make the decision for "Now".
-    const lastIndex = cleanedHistory.length - 1;
+    // 4. Select Data Point
+    // Python uses iloc[-2] (Second to last candle) for stability.
+    const prevIndex = cleanedHistory.length - 2;
     
-    const latestFair = fairPrices[lastIndex];
-    const latestMarginDeep = marginDeeps[lastIndex];
+    const prevFair = fairPrices[prevIndex];
+    const prevMarginDeep = marginDeeps[prevIndex];
 
-    // Verify we have valid indicators at the tip
-    if (latestFair === null || latestMarginDeep === null) {
+    if (prevFair === null || prevMarginDeep === null) {
         return null;
     }
 
-    // 5. Strategy Calculation (V13 Logic)
-    
-    // BUY LOGIC: Deep Value (Lowball)
-    // Target = Fair - (Max Historical Dip * 1.1)
-    const targetBuy = Math.floor(latestFair - (latestMarginDeep * LOWBALL_FACTOR));
+    // 5. Strategy Calculation
+    // Buy Logic: Fair Value - (Max Historical Dip * 1.1)
+    const targetBuy = Math.floor(prevFair - (prevMarginDeep * LOWBALL_FACTOR));
 
-    // SELL LOGIC: Fixed Markup
-    // Target = Buy Price * 1.015
+    // Sell Logic: Target Profit (1.5%)
     const targetSell = Math.floor(targetBuy * PROFIT_TARGET);
 
     // 6. Profitability Check
@@ -167,11 +157,11 @@ export const calculateOfferPrices = (
     const expectedProfit = targetSell - targetBuy - tax;
 
     if (expectedProfit <= 0) {
-        return {
+         return {
             recommendedBuy: null,
             recommendedSell: null,
             potentialProfit: 0,
-            potentialMargin: '0%',
+            potentialMargin: '0.00%',
             analysisMethod: 'Historical',
             fulfilmentAnalysis: null
         };
